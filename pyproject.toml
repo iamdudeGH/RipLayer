@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring GenLayer Studio, GLSim, or testnet (run with gltest)",
+    "slow: tests that call real web/LLM consensus",
+]
