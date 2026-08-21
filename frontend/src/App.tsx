@@ -115,6 +115,7 @@ export default function App() {
   const [amount, setAmount] = useState("1");
   const [deadlineLocal, setDeadlineLocal] = useState(defaultDeadline);
   const [minChars, setMinChars] = useState("8");
+  const [criteria, setCriteria] = useState("");
   const [lookupHandle, setLookupHandle] = useState("");
   const [binding, setBinding] = useState<HandleView | null>(null);
   const [bounties, setBounties] = useState<Record<string, BountyView>>({});
@@ -258,6 +259,7 @@ export default function App() {
             deadline,
             minChars: Number(minChars),
             valueWei: parseGen(amount),
+            criteria,
           },
           onPhase,
         ),
@@ -394,7 +396,11 @@ export default function App() {
                   <div className="mono">
                     #{bounty.id} · {formatDeadline(bounty.deadline)}
                     {sameAddress(bounty.requester, account) ? " · yours" : ""}
+                    {bounty.criteria ? " · AI judged" : ""}
                   </div>
+                  {bounty.criteria ? (
+                    <p className="hint">Prompt: {bounty.criteria}</p>
+                  ) : null}
                   {bounty.tweet_url ? (
                     <a href={bounty.tweet_url} target="_blank" rel="noreferrer">
                       {bounty.tweet_url}
@@ -460,9 +466,14 @@ export default function App() {
                       </div>
                     </div>
                   ) : bounty.reply_url ? (
-                    <a href={bounty.reply_url} target="_blank" rel="noreferrer">
-                      Paid proof {bounty.reply_url}
-                    </a>
+                    <>
+                      <a href={bounty.reply_url} target="_blank" rel="noreferrer">
+                        Paid proof {bounty.reply_url}
+                      </a>
+                      {bounty.verdict_note ? (
+                        <p className="hint">{bounty.verdict_note}</p>
+                      ) : null}
+                    </>
                   ) : (
                     <p className="mono">Returned to {shortAddr(bounty.requester)}</p>
                   )}
@@ -502,7 +513,10 @@ export default function App() {
 
           {tab === "bounty" ? (
             <form onSubmit={onOpen}>
-              <p className="hint">Name the handle, the tweet, and the GEN you are willing to lock.</p>
+              <p className="hint">
+                Name the handle, the tweet, and what a valid reply must actually
+                say. Validators judge the meaning, not just character count.
+              </p>
               <label htmlFor="target">Pay this handle</label>
               <input
                 id="target"
@@ -556,6 +570,13 @@ export default function App() {
                 value={deadlineLocal}
                 onChange={(event) => setDeadlineLocal(event.target.value)}
                 required
+              />
+              <label htmlFor="criteria">What must the reply do?</label>
+              <textarea
+                id="criteria"
+                value={criteria}
+                onChange={(event) => setCriteria(event.target.value)}
+                placeholder="Answer the technical question with a real explanation"
               />
               <label htmlFor="min">Minimum reply length</label>
               <input

@@ -35,7 +35,7 @@ def test_open_bounty_and_read():
 
     _transact(
         contract.open_bounty(
-            args=["mrbeast", "https://x.com/fan/status/100", 2000000000, 1],
+            args=["mrbeast", "https://x.com/fan/status/100", 2000000000, 1, ""],
             value=10**15,
         )
     )

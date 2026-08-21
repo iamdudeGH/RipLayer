@@ -44,6 +44,8 @@ export type BountyView = {
   reply_url?: string;
   reply_id?: string;
   paid_to?: string;
+  criteria?: string;
+  verdict_note?: string;
 };
 
 function requireAddress(): `0x${string}` {
@@ -261,13 +263,14 @@ export function openBounty(
     deadline: number;
     minChars: number;
     valueWei: bigint;
+    criteria: string;
   },
   onPhase: PhaseHandler,
 ) {
   return write(
     account,
     "open_bounty",
-    [args.targetHandle, args.tweetUrl, args.deadline, args.minChars],
+    [args.targetHandle, args.tweetUrl, args.deadline, args.minChars, args.criteria],
     args.valueWei,
     onPhase,
   );

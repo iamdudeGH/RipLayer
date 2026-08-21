@@ -50,6 +50,8 @@ class Bounty:
     reply_url: str
     reply_id: str
     paid_to: Address
+    criteria: str
+    verdict_note: str
 
 
 def _user_error(prefix: str, message: str):
@@ -200,6 +202,87 @@ def _fetch_tweet(tweet_id: str) -> dict:
     }
 
 
+def _parse_llm_json(raw) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    text = str(raw).strip().replace("```json", "").replace("```", "").strip()
+    first = text.find("{")
+    last = text.rfind("}")
+    if first == -1 or last <= first:
+        _user_error(ERROR_LLM, "No JSON object found in LLM response")
+    try:
+        parsed = json.loads(text[first : last + 1])
+    except Exception as exc:
+        _user_error(ERROR_LLM, f"Malformed JSON: {exc}")
+    if not isinstance(parsed, dict):
+        _user_error(ERROR_LLM, "LLM returned non-dict")
+    return parsed
+
+
+def _parse_meets(analysis: dict) -> bool:
+    raw = analysis.get("meets")
+    if raw is None:
+        for alt in ("passed", "ok", "satisfies", "accepted", "yes"):
+            if alt in analysis:
+                raw = analysis[alt]
+                break
+    if raw is None:
+        _user_error(ERROR_LLM, f"Missing meets. Keys: {list(analysis.keys())}")
+    if isinstance(raw, bool):
+        return raw
+    value = str(raw).strip().lower()
+    if value in ("true", "yes", "1", "pass", "passed", "meets"):
+        return True
+    if value in ("false", "no", "0", "fail", "failed"):
+        return False
+    _user_error(ERROR_LLM, f"Invalid meets: {raw}")
+    return False
+
+
+def _parse_reasoning(analysis: dict) -> str:
+    raw = analysis.get("reasoning")
+    if raw is None:
+        for alt in ("reason", "analysis", "explanation"):
+            if alt in analysis:
+                raw = analysis[alt]
+                break
+    if raw is None:
+        return ""
+    return str(raw).strip()[:MAX_TEXT_LEN]
+
+
+def _judge_reply(criteria: str, original_text: str, reply_text: str) -> dict:
+    prompt = f"""
+Judge whether this X reply satisfies the bounty criteria.
+
+Criteria:
+{criteria}
+
+Original tweet:
+{original_text if original_text else "(not available)"}
+
+Reply:
+{reply_text}
+
+Rules:
+- meets is true only if the reply genuinely addresses the criteria.
+- Generic filler, spam, or unrelated text must fail.
+- A real explanation, review, or feedback that matches the criteria should pass.
+
+Respond as JSON:
+{{
+  "meets": true,
+  "reasoning": "short justification"
+}}
+"""
+    raw = gl.nondet.exec_prompt(prompt, response_format="json")
+    analysis = _parse_llm_json(raw)
+    return {
+        "meets": _parse_meets(analysis),
+        "reasoning": _parse_reasoning(analysis),
+    }
+
+
 class RipLayer(gl.Contract):
     handles: TreeMap[str, HandleBinding]
     bounties: TreeMap[str, Bounty]
@@ -281,6 +364,8 @@ class RipLayer(gl.Contract):
             "reply_url": bounty.reply_url,
             "reply_id": bounty.reply_id,
             "paid_to": bounty.paid_to.as_hex,
+            "criteria": bounty.criteria,
+            "verdict_note": bounty.verdict_note,
             "exists": True,
         }
 
@@ -299,6 +384,48 @@ class RipLayer(gl.Contract):
                 mine.get("author") == leader.get("author")
                 and mine.get("tweet_id") == leader.get("tweet_id")
                 and mine.get("reply_to_id") == leader.get("reply_to_id")
+            )
+
+        return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+
+    def _run_reply_check(
+        self, reply_id: str, original_id: str, criteria: str
+    ) -> dict:
+        def leader_fn():
+            reply = _fetch_tweet(reply_id)
+            original_text = ""
+            if criteria != "":
+                original = _fetch_tweet(original_id)
+                original_text = str(original.get("text", ""))
+                judgment = _judge_reply(
+                    criteria, original_text, str(reply.get("text", ""))
+                )
+                meets = bool(judgment["meets"])
+                reasoning = str(judgment["reasoning"])
+            else:
+                meets = True
+                reasoning = ""
+            return {
+                "author": reply.get("author"),
+                "tweet_id": reply.get("tweet_id"),
+                "reply_to_id": reply.get("reply_to_id"),
+                "char_count": reply.get("char_count"),
+                "meets": meets,
+                "reasoning": reasoning,
+            }
+
+        def validator_fn(leaders_res: gl.vm.Result) -> bool:
+            if not isinstance(leaders_res, gl.vm.Return):
+                return _handle_leader_error(leaders_res, leader_fn)
+            leader = leaders_res.calldata
+            if not isinstance(leader, dict):
+                return False
+            mine = leader_fn()
+            return (
+                mine.get("author") == leader.get("author")
+                and mine.get("tweet_id") == leader.get("tweet_id")
+                and mine.get("reply_to_id") == leader.get("reply_to_id")
+                and bool(mine.get("meets")) == bool(leader.get("meets"))
             )
 
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -339,6 +466,7 @@ class RipLayer(gl.Contract):
         tweet_url: str,
         deadline: int,
         min_chars: int,
+        criteria: str,
     ) -> None:
         handle = self._require_handle(target_handle)
         tweet_url = self._require_url(tweet_url, "tweet_url")
@@ -352,6 +480,9 @@ class RipLayer(gl.Contract):
             _user_error(ERROR_EXPECTED, "min_chars must be at least 1")
         if int(min_chars) > MAX_TEXT_LEN:
             _user_error(ERROR_EXPECTED, "min_chars is too large")
+        criteria = criteria.strip()
+        if len(criteria) > MAX_TEXT_LEN:
+            _user_error(ERROR_EXPECTED, "criteria is too long")
 
         next_id = int(self.bounty_count) + 1
         bounty_id = str(next_id)
@@ -369,6 +500,8 @@ class RipLayer(gl.Contract):
             reply_url="",
             reply_id="",
             paid_to=Address("0x0000000000000000000000000000000000000000"),
+            criteria=criteria,
+            verdict_note="",
         )
         self.bounty_ids.append(bounty_id)
         self._append_handle_bounty(handle, bounty_id)
@@ -388,12 +521,14 @@ class RipLayer(gl.Contract):
 
         reply_url = self._require_url(reply_url, "reply_url")
         reply_id = _tweet_id_from_url(reply_url)
-        tweet = self._run_tweet_fetch(reply_id)
+        result = self._run_reply_check(reply_id, bounty.tweet_id, bounty.criteria)
 
-        author = str(tweet.get("author", ""))
-        fetched_id = str(tweet.get("tweet_id", reply_id))
-        reply_to = str(tweet.get("reply_to_id", ""))
-        char_count = int(tweet.get("char_count", 0))
+        author = str(result.get("author", ""))
+        fetched_id = str(result.get("tweet_id", reply_id))
+        reply_to = str(result.get("reply_to_id", ""))
+        char_count = int(result.get("char_count", 0))
+        meets = bool(result.get("meets", False))
+        reasoning = str(result.get("reasoning", ""))[:MAX_TEXT_LEN]
 
         if author != bounty.target_handle:
             _user_error(ERROR_EXPECTED, "Reply is not from the target handle")
@@ -401,6 +536,8 @@ class RipLayer(gl.Contract):
             _user_error(ERROR_EXPECTED, "Tweet is not a reply to the bounty tweet")
         if char_count < int(bounty.min_chars):
             _user_error(ERROR_EXPECTED, "Reply is shorter than min_chars")
+        if bounty.criteria != "" and not meets:
+            _user_error(ERROR_EXPECTED, "Reply does not meet bounty criteria")
 
         payee = self.handles[bounty.target_handle].owner
         amount = bounty.amount
@@ -408,6 +545,7 @@ class RipLayer(gl.Contract):
         bounty.reply_url = reply_url
         bounty.reply_id = fetched_id
         bounty.paid_to = payee
+        bounty.verdict_note = reasoning
         self._pay(payee, amount)
 
     @gl.public.write

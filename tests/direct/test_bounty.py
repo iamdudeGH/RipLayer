@@ -4,13 +4,22 @@ from tests.direct.conftest import (
     CONTRACT_PATH,
     FAR_DEADLINE,
     ONE_GEN,
+    mock_criteria_llm,
     mock_tweet,
     register_handle,
     to_hex,
 )
 
 
-def _open(vm, contract, sender, amount=ONE_GEN, deadline=FAR_DEADLINE, min_chars=1):
+def _open(
+    vm,
+    contract,
+    sender,
+    amount=ONE_GEN,
+    deadline=FAR_DEADLINE,
+    min_chars=1,
+    criteria="",
+):
     vm.sender = sender
     vm.deal(sender, amount * 2)
     vm.value = amount
@@ -19,6 +28,7 @@ def _open(vm, contract, sender, amount=ONE_GEN, deadline=FAR_DEADLINE, min_chars
         "https://x.com/fan/status/100",
         deadline,
         min_chars,
+        criteria,
     )
     vm.value = 0
 
@@ -32,6 +42,7 @@ def test_open_bounty(direct_vm, direct_deploy, direct_alice):
     assert bounty["status"] == "open"
     assert bounty["target_handle"] == "mrbeast"
     assert bounty["tweet_id"] == "100"
+    assert bounty["criteria"] == ""
     assert bounty["amount"] == ONE_GEN
     assert bounty["requester"] == to_hex(direct_alice)
     assert contract.get_bounty_ids() == ["1"]
@@ -48,6 +59,7 @@ def test_open_bounty_rejects_zero(direct_vm, direct_deploy, direct_alice):
             "https://x.com/fan/status/100",
             FAR_DEADLINE,
             1,
+            "",
         )
 
 
@@ -143,6 +155,55 @@ def test_refund_before_deadline_fails(direct_vm, direct_deploy, direct_alice):
     _open(direct_vm, contract, direct_alice)
     with direct_vm.expect_revert("[EXPECTED] Bounty has not expired"):
         contract.refund("1")
+
+
+def test_criteria_reply_pays(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = direct_deploy(CONTRACT_PATH)
+    direct_vm.sender = direct_bob
+    register_handle(direct_vm, contract, "mrbeast", "11", to_hex(direct_bob))
+    _open(
+        direct_vm,
+        contract,
+        direct_alice,
+        criteria="Answer the technical question with a real explanation.",
+    )
+    mock_tweet(direct_vm, "100", "fan", "How does optimistic consensus work?")
+    mock_tweet(
+        direct_vm,
+        "200",
+        "mrbeast",
+        "Optimistic consensus lets a leader propose, then validators independently re-run the task and vote.",
+        reply_to="100",
+    )
+    mock_criteria_llm(direct_vm, meets=True, reasoning="Explains the mechanism.")
+
+    contract.submit_reply("1", "https://x.com/mrbeast/status/200")
+    bounty = contract.get_bounty("1")
+    assert bounty["status"] == "paid"
+    assert bounty["verdict_note"] == "Explains the mechanism."
+
+
+def test_criteria_rejects_spam_reply(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = direct_deploy(CONTRACT_PATH)
+    direct_vm.sender = direct_bob
+    register_handle(direct_vm, contract, "mrbeast", "11", to_hex(direct_bob))
+    _open(
+        direct_vm,
+        contract,
+        direct_alice,
+        criteria="Provide genuine product feedback.",
+    )
+    mock_tweet(direct_vm, "100", "fan", "What did you think of the launch?")
+    mock_tweet(direct_vm, "200", "mrbeast", "asdfghjkl123", reply_to="100")
+    mock_criteria_llm(direct_vm, meets=False, reasoning="Spam, not feedback.")
+
+    with direct_vm.expect_revert("[EXPECTED] Reply does not meet bounty criteria"):
+        contract.submit_reply("1", "https://x.com/mrbeast/status/200")
+    assert contract.get_bounty("1")["status"] == "open"
 
 
 def test_only_requester_can_refund(

@@ -22,6 +22,7 @@ def test_list_bounties(direct_vm, direct_deploy, direct_alice):
         "https://x.com/fan/status/100",
         FAR_DEADLINE,
         1,
+        "",
     )
     listed = contract.list_bounties()
     assert "1" in listed

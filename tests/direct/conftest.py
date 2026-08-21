@@ -57,6 +57,13 @@ def mock_tweet(vm, tweet_id, author, text, reply_to=""):
     )
 
 
+def mock_criteria_llm(vm, meets=True, reasoning="Reply addresses the prompt."):
+    vm.mock_llm(
+        r".*Judge whether this X reply satisfies the bounty criteria.*",
+        json.dumps({"meets": meets, "reasoning": reasoning}),
+    )
+
+
 def register_handle(vm, contract, handle, tweet_id, owner_hex):
     mock_tweet(
         vm,

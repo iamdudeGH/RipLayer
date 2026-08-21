@@ -10,7 +10,7 @@ GenLayer is the adjudication protocol. The Intelligent Contract is the escrow.
 
 1. **Register a handle.** Tweet your GenLayer/EVM address from that X account and submit the tweet URL. Whoever currently controls the handle can re-bind the payout wallet.
 2. **Open a bounty.** Name the handle, the tweet you want a reply on, a deadline, and lock GEN.
-3. **Submit proof.** Anyone can submit a public reply URL. Payment always goes to the registered wallet, not the submitter.
+3. **Submit proof.** Anyone can submit a public reply URL. If the bounty has criteria, GenLayer validators judge whether the reply actually answers it — not just whether a reply exists. Payment always goes to the registered wallet.
 4. **Refund.** After expiry, only the requester can pull unspent GEN back.
 
 Validators agree on stable tweet fields from `api.fxtwitter.com` (author, tweet id, reply-to id). They do not rubber-stamp the UI.
@@ -64,8 +64,25 @@ npx genlayer deploy --contract contracts/rip_layer.py
 Live on Bradbury:
 
 ```
-VITE_CONTRACT_ADDRESS=0x44C62D8a076a3e0b6F686C5c12625c9FF59e535A
+VITE_CONTRACT_ADDRESS=0x27Ec9DdA20bBE01a0e4BC0a3FbcA71f6aBEd61DE
 VITE_NETWORK=testnetBradbury
 ```
 
 Explorer: https://explorer-bradbury.genlayer.com/
+
+## Frontend on Vercel
+
+Import https://github.com/iamdudeGH/RipLayer and set:
+
+- **Root Directory:** `frontend`
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+
+Environment variables (must be set before the first build — Vite inlines them):
+
+```
+VITE_CONTRACT_ADDRESS=0x27Ec9DdA20bBE01a0e4BC0a3FbcA71f6aBEd61DE
+VITE_NETWORK=testnetBradbury
+```
+
+Framework preset can be Vite. After deploy, connect MetaMask to Bradbury (chain id `4221`).
