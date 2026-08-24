@@ -64,7 +64,7 @@ npx genlayer deploy --contract contracts/rip_layer.py
 Live on Bradbury:
 
 ```
-VITE_CONTRACT_ADDRESS=0x27Ec9DdA20bBE01a0e4BC0a3FbcA71f6aBEd61DE
+VITE_CONTRACT_ADDRESS=0x5f1c824Cd62cACDc83C8926cEcbeeC9CF93A2249
 VITE_NETWORK=testnetBradbury
 ```
 
