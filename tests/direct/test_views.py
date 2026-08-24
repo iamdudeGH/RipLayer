@@ -12,8 +12,11 @@ def test_empty_registry(direct_deploy):
     assert contract.get_bounty("1")["exists"] is False
 
 
-def test_list_bounties(direct_vm, direct_deploy, direct_alice):
+def test_list_bounties(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT_PATH)
+    direct_vm.sender = direct_bob
+    register_handle(direct_vm, contract, "mrbeast", "11", to_hex(direct_bob))
+
     direct_vm.sender = direct_alice
     direct_vm.deal(direct_alice, ONE_GEN * 2)
     direct_vm.value = ONE_GEN

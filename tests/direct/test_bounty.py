@@ -143,9 +143,17 @@ def test_submit_rejects_non_reply(
 
 def test_submit_requires_registration(direct_vm, direct_deploy, direct_alice):
     contract = direct_deploy(CONTRACT_PATH)
-    _open(direct_vm, contract, direct_alice)
+    direct_vm.sender = direct_alice
+    direct_vm.deal(direct_alice, ONE_GEN * 2)
+    direct_vm.value = ONE_GEN
     with direct_vm.expect_revert("[EXPECTED] Target handle is not registered"):
-        contract.submit_reply("1", "https://x.com/mrbeast/status/200")
+        contract.open_bounty(
+            "unregistered_user",
+            "https://x.com/fan/status/100",
+            FAR_DEADLINE,
+            1,
+            "",
+        )
 
 
 def test_submit_already_paid_fails(
@@ -162,8 +170,11 @@ def test_submit_already_paid_fails(
         contract.submit_reply("1", "https://x.com/mrbeast/status/200")
 
 
-def test_refund_after_deadline(direct_vm, direct_deploy, direct_alice):
+def test_refund_after_deadline(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT_PATH)
+    direct_vm.sender = direct_bob
+    register_handle(direct_vm, contract, "mrbeast", "11", to_hex(direct_bob))
+
     direct_vm.warp("2024-01-01T00:00:00Z")
     _open(direct_vm, contract, direct_alice, deadline=1706745600)  # 2024-02-01
     direct_vm.warp("2024-03-01T00:00:00Z")
@@ -172,8 +183,11 @@ def test_refund_after_deadline(direct_vm, direct_deploy, direct_alice):
     assert contract.get_bounty("1")["status"] == "refunded"
 
 
-def test_refund_before_deadline_fails(direct_vm, direct_deploy, direct_alice):
+def test_refund_before_deadline_fails(direct_vm, direct_deploy, direct_alice, direct_bob):
     contract = direct_deploy(CONTRACT_PATH)
+    direct_vm.sender = direct_bob
+    register_handle(direct_vm, contract, "mrbeast", "11", to_hex(direct_bob))
+
     _open(direct_vm, contract, direct_alice)
     with direct_vm.expect_revert("[EXPECTED] Bounty has not expired"):
         contract.refund("1")

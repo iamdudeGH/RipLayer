@@ -46,6 +46,12 @@ def test_validator_divergence_on_char_count_or_criteria(
 
     mock_tweet(
         direct_vm,
+        "100",
+        "fan",
+        "Can someone explain consensus?",
+    )
+    mock_tweet(
+        direct_vm,
         "200",
         "mrbeast",
         "Consensus requires independent validator agreement.",
