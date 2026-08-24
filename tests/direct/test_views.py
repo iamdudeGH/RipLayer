@@ -1,6 +1,10 @@
-"""Empty-state and listing views."""
-
-from tests.direct.conftest import CONTRACT_PATH, FAR_DEADLINE, ONE_GEN
+from tests.direct.conftest import (
+    CONTRACT_PATH,
+    FAR_DEADLINE,
+    ONE_GEN,
+    register_handle,
+    to_hex,
+)
 
 
 def test_empty_registry(direct_deploy):
