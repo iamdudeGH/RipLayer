@@ -41,6 +41,7 @@ class Bounty:
     id: str
     requester: Address
     target_handle: str
+    beneficiary: Address
     tweet_url: str
     tweet_id: str
     amount: u256
@@ -285,6 +286,7 @@ Respond as JSON:
 
 class RipLayer(gl.Contract):
     handles: TreeMap[str, HandleBinding]
+    used_proof_tweets: TreeMap[str, bool]
     bounties: TreeMap[str, Bounty]
     bounty_ids: DynArray[str]
     handle_bounty_ids: TreeMap[str, str]
@@ -355,6 +357,7 @@ class RipLayer(gl.Contract):
             "id": bounty.id,
             "requester": bounty.requester.as_hex,
             "target_handle": bounty.target_handle,
+            "beneficiary": bounty.beneficiary.as_hex,
             "tweet_url": bounty.tweet_url,
             "tweet_id": bounty.tweet_id,
             "amount": int(bounty.amount),
@@ -384,6 +387,7 @@ class RipLayer(gl.Contract):
                 mine.get("author") == leader.get("author")
                 and mine.get("tweet_id") == leader.get("tweet_id")
                 and mine.get("reply_to_id") == leader.get("reply_to_id")
+                and mine.get("text") == leader.get("text")
             )
 
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
@@ -410,6 +414,7 @@ class RipLayer(gl.Contract):
                 "tweet_id": reply.get("tweet_id"),
                 "reply_to_id": reply.get("reply_to_id"),
                 "char_count": reply.get("char_count"),
+                "text": reply.get("text"),
                 "meets": meets,
                 "reasoning": reasoning,
             }
@@ -425,6 +430,7 @@ class RipLayer(gl.Contract):
                 mine.get("author") == leader.get("author")
                 and mine.get("tweet_id") == leader.get("tweet_id")
                 and mine.get("reply_to_id") == leader.get("reply_to_id")
+                and int(mine.get("char_count", 0)) == int(leader.get("char_count", 0))
                 and bool(mine.get("meets")) == bool(leader.get("meets"))
             )
 
@@ -435,6 +441,9 @@ class RipLayer(gl.Contract):
         handle = self._require_handle(handle)
         proof_url = self._require_url(proof_url, "proof_url")
         tweet_id = _tweet_id_from_url(proof_url)
+        if self.used_proof_tweets.get(tweet_id, False):
+            _user_error(ERROR_EXPECTED, "Proof tweet has already been used")
+
         sender = gl.message.sender_address
         marker = sender.as_hex.lower()
 
@@ -452,6 +461,7 @@ class RipLayer(gl.Contract):
                 "Proof tweet must contain your wallet address",
             )
 
+        self.used_proof_tweets[tweet_id] = True
         self.handles[handle] = HandleBinding(
             handle=handle,
             owner=sender,
@@ -469,6 +479,10 @@ class RipLayer(gl.Contract):
         criteria: str,
     ) -> None:
         handle = self._require_handle(target_handle)
+        if handle not in self.handles:
+            _user_error(ERROR_EXPECTED, "Target handle is not registered")
+        beneficiary = self.handles[handle].owner
+
         tweet_url = self._require_url(tweet_url, "tweet_url")
         tweet_id = _tweet_id_from_url(tweet_url)
         amount = gl.message.value
@@ -491,6 +505,7 @@ class RipLayer(gl.Contract):
             id=bounty_id,
             requester=gl.message.sender_address,
             target_handle=handle,
+            beneficiary=beneficiary,
             tweet_url=tweet_url,
             tweet_id=tweet_id,
             amount=amount,
@@ -516,8 +531,6 @@ class RipLayer(gl.Contract):
             _user_error(ERROR_EXPECTED, "Bounty is not open")
         if _now() >= int(bounty.deadline):
             _user_error(ERROR_EXPECTED, "Bounty has expired")
-        if bounty.target_handle not in self.handles:
-            _user_error(ERROR_EXPECTED, "Target handle is not registered")
 
         reply_url = self._require_url(reply_url, "reply_url")
         reply_id = _tweet_id_from_url(reply_url)
@@ -539,7 +552,8 @@ class RipLayer(gl.Contract):
         if bounty.criteria != "" and not meets:
             _user_error(ERROR_EXPECTED, "Reply does not meet bounty criteria")
 
-        payee = self.handles[bounty.target_handle].owner
+        # Snapshot beneficiary locked at bounty creation time
+        payee = bounty.beneficiary
         amount = bounty.amount
         bounty.status = "paid"
         bounty.reply_url = reply_url
@@ -547,6 +561,7 @@ class RipLayer(gl.Contract):
         bounty.paid_to = payee
         bounty.verdict_note = reasoning
         self._pay(payee, amount)
+
 
     @gl.public.write
     def refund(self, bounty_id: str) -> None:

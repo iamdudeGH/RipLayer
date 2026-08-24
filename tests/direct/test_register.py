@@ -53,3 +53,20 @@ def test_reregister_moves_payout_wallet(
     register_handle(direct_vm, contract, "mrbeast", "222", bob)
 
     assert contract.get_handle("mrbeast")["owner"] == bob
+
+
+def test_register_rejects_stale_proof_replay(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    contract = direct_deploy(CONTRACT_PATH)
+    alice = to_hex(direct_alice)
+
+    direct_vm.sender = direct_alice
+    register_handle(direct_vm, contract, "mrbeast", "111", alice)
+
+    # Attempting to reuse the exact same proof tweet ID again must be rejected as stale proof replay
+    direct_vm.sender = direct_bob
+    with direct_vm.expect_revert(
+        "[EXPECTED] Proof tweet has already been used"
+    ):
+        contract.register_handle("mrbeast", "https://x.com/mrbeast/status/111")

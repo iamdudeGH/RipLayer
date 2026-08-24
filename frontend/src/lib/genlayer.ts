@@ -35,6 +35,7 @@ export type BountyView = {
   exists?: boolean;
   requester?: string;
   target_handle?: string;
+  beneficiary?: string;
   tweet_url?: string;
   tweet_id?: string;
   amount?: number | string;
