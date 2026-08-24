@@ -1,7 +1,6 @@
 """Direct tests for leader-validator consensus divergence and equivalence gates."""
 
 import json
-from genlayer import *
 from tests.direct.conftest import (
     CONTRACT_PATH,
     FAR_DEADLINE,
